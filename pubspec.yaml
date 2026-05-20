@@ -1,0 +1,32 @@
+name: rxws
+description: A high-performance reactive state management library for Flutter featuring automatic dependency tracking and granular field-level updates.
+version: 1.0.0
+homepage: https://github.com/msfm2018/rxws
+repository: https://github.com/msfm2018/rxws
+issue_tracker: https://github.com/msfm2018/rxws/issues
+
+topics:
+  - state-management
+  - reactive
+  - flutter-widgets
+  - performance
+
+environment:
+  sdk: '>=3.0.6 <4.0.0'
+  flutter: ">=1.17.0"
+
+dependencies:
+  crypto: ^3.0.7
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+
+
+
+example: example/lib/main.dart
