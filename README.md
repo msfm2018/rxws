@@ -1,33 +1,33 @@
-
 ```markdown
 # RxWs
 
-A lightweight, high-performance, raw WebSocket client implemented in pure Dart.  
-No external WebSocket dependencies — full control over frames, masking, and connection lifecycle.
+A lightweight, high-performance, pure Dart WebSocket client with automatic reconnection and full protocol control.
 
 ---
 
 ## ✨ Features
 
-- ✅ Pure Dart implementation (no `web_socket_channel` dependency)
-- ✅ TLS / SecureSocket support
+- ✅ Pure Dart implementation — no external WebSocket dependencies
+- ✅ Support for `ws://` and `wss://` URLs
+- ✅ Automatic URL parsing (`Uri.parse`)
+- ✅ TLS (`SecureSocket`) support
 - ✅ Full WebSocket protocol (framing, masking, fragmentation)
-- ✅ Automatic Ping/Pong heartbeat (every 10s)
+- ✅ Automatic Ping/Pong heartbeat (every 10 seconds)
 - ✅ Pong timeout detection + auto reconnect
-- ✅ Exponential backoff reconnection strategy
+- ✅ Exponential backoff reconnection (up to 10 retries)
 - ✅ Strict handshake verification (`Sec-WebSocket-Accept`)
-- ✅ Backpressure support for sending
+- ✅ Backpressure handling for sending messages
 - ✅ Clean resource management
 
 ---
 
 ## 📦 Installation
 
-Add the following to your `pubspec.yaml`:
+Add this to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  rxws: ^1.0.0   # for SHA1 handshake
+  crypto: ^3.0.0   # Required for SHA-1 handshake verification
 ```
 
 Then run:
@@ -38,20 +38,16 @@ flutter pub get    # or dart pub get
 
 ---
 
-## 🚀 Usage
-
-### Basic Example
+## 🚀 Quick Start
 
 ```dart
-import 'package:your_project/raw_websocket_client.dart';
+final ws = RxWs();
 
-final client = RawWebSocketClient();
-
-client.states.listen((state) {
-  print('State: $state');
+ws.states.listen((state) {
+  print('WebSocket State: $state');
 });
 
-client.messages.listen((message) {
+ws.messages.listen((message) {
   if (message is String) {
     print('Text: $message');
   } else if (message is List<int>) {
@@ -59,15 +55,15 @@ client.messages.listen((message) {
   }
 });
 
-// Connect
-await client.connect('echo.websocket.org', 80, '/');
+// Connect using full URL
+await ws.connect('ws://echo.websocket.events');
 
-// Send messages
-client.sendText('Hello WebSocket!');
-client.sendBinary([1, 2, 3, 4]);
+// Or with TLS
+// await ws.connect('wss://echo.websocket.events');
 
-// Manual ping
-client.ping();
+ws.sendText('Hello from RxWs!');
+ws.sendBinary([1, 2, 3, 4, 5]);
+ws.ping();
 ```
 
 ---
@@ -77,14 +73,14 @@ client.ping();
 ### Main Methods
 
 | Method | Description |
-|-------|-------------|
-| `Future<void> connect(...)` | Connect to WebSocket server |
+|--------|-------------|
+| `Future<void> connect(String url)` | Connect using `ws://` or `wss://` URL |
 | `void sendText(String text)` | Send text message |
 | `void sendBinary(List<int> data)` | Send binary message |
-| `void ping()` | Send ping frame |
-| `void close({int code = 1000})` | Close connection |
-| `Stream<dynamic> get messages` | Received messages (String or Uint8List) |
-| `Stream<WSState> get states` | Connection state changes |
+| `void ping()` | Send a ping frame |
+| `void close()` | Close the connection |
+| `Stream<dynamic> get messages` | Received messages (`String` or `List<int>`) |
+| `Stream<WSState> get states` | Connection state stream |
 
 ### Connection States
 
@@ -96,32 +92,51 @@ enum WSState { connecting, open, closing, closed }
 
 ## Advanced Usage
 
-### With custom headers
+### Connect with Custom Headers
 
 ```dart
-await client.connect(
-  'example.com',
-  443,
-  '/ws',
-  tls: true,
+await ws.connect(
+  'wss://example.com/chat',
   headers: {
     'Authorization': 'Bearer your-token',
-    'X-Custom-Header': 'value'
-  }
+    'X-User-Id': '123',
+  },
 );
 ```
 
-### Listen to connection state
+### Listen to States
 
 ```dart
-client.states.listen((state) {
-  if (state == WSState.open) {
-    print('✅ Connected');
-  } else if (state == WSState.closed) {
-    print('❌ Disconnected');
+ws.states.listen((state) {
+  switch (state) {
+    case WSState.open:
+      print('✅ Connected');
+      break;
+    case WSState.closed:
+      print('❌ Disconnected');
+      break;
+    case WSState.connecting:
+      print('🔄 Connecting...');
+      break;
   }
 });
 ```
+
+### Send Messages
+
+```dart
+ws.sendText('Hello World');
+ws.sendBinary(Uint8List.fromList([0x01, 0x02, 0xFF]));
+```
+
+---
+
+## Example URLs
+
+- `ws://echo.websocket.events`
+- `wss://echo.websocket.events`
+- `ws://localhost:8080/ws`
+- `wss://api.example.com/chat?token=abc123`
 
 ---
 
@@ -133,10 +148,10 @@ See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
 
 ## License
 
-This project is licensed under the MIT License.
+MIT License
 
 ---
 
-**Made with ❤️ for full control and reliability.**
+**Built for performance, reliability, and ease of use.**
 ```
 

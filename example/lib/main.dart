@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:rxws/rx_ws.dart';
+import 'package:rxws/rxws.dart';
 
 void main() {
   runApp(const MyApp());
