@@ -1,4 +1,4 @@
-# rx_websocket
+# rxws
 A reliable, cross-platform WebSocket client for Dart & Flutter.
 
 ## Features
