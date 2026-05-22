@@ -4,50 +4,104 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
+import 'ws_client.dart';
 
-enum WSState { connecting, open, closing, closed }
-
+/// WebSocket operation codes
 enum OpCode { continuation, text, binary, close, ping, pong }
 
+/// A robust, reusable WebSocket client for Dart
+/// Supports auto-reconnect, heartbeat, fragmentation, and backpressure
 class RxWs {
   Socket? _socket;
 
   WSState _state = WSState.closed;
 
+  /// Current connection state
+  WSState get state => _state;
+
+  /// Check if connected and ready
+  bool get isConnected => _state == WSState.open;
+
+  /// Check if connecting
+  bool get isConnecting => _state == WSState.connecting;
+
+  /// Check if closed
+  bool get isClosed => _state == WSState.closed;
+
+  // Configuration
+  final bool autoReconnect;
+  final int maxRetry;
+
+  // Stream controllers
+  final _onOpenController = StreamController<void>.broadcast();
+
+  /// Emitted when connection closes
+  final _onCloseController = StreamController<void>.broadcast();
+
+  /// Emitted on errors
+  final _onErrorController = StreamController<dynamic>.broadcast();
+
+  /// Emitted when connection opens
+  Stream<void> get onOpen => _onOpenController.stream;
+  Stream<void> get onClose => _onCloseController.stream;
+  Stream<dynamic> get onError => _onErrorController.stream;
+
   final _messageController = StreamController<dynamic>.broadcast();
+
+  /// Incoming messages (String or Uint8List)
   Stream<dynamic> get messages => _messageController.stream;
 
   final _stateController = StreamController<WSState>.broadcast();
-  Stream<WSState> get states => _stateController.stream;
 
+  /// Connection state changes
+  Stream<WSState> get states => _stateController.stream;
+  //Buffers
   Uint8List _buffer = Uint8List(0);
 
   // fragmentation
   List<int> _fragmentBuffer = [];
+
+  //Handshake
   int? _fragmentOpcode;
+
+  // Handshake
   String? _handshakeKey; // 保存 key 用于验证
-  // backpressure
+
+  // Send queue & backpressure
   final _sendQueue = <List<int>>[];
   bool _isSending = false;
 
   // reconnect
   int _retry = 0;
-  final int _maxRetry = 10;
 
   // heartbeat
   Timer? _heartbeat;
   Timer? _pongTimeout;
 
+  // Connection info
   late String _host;
   late int _port;
   late String _path;
   bool _useTLS = false;
 
+  /// Custom HTTP headers for handshake
   Map<String, String> headers = {};
 
-  // =========================
-  // CONNECT (支持直接传入完整的 ws:// 或 wss:// 链接)
-  // =========================
+  /// Create a new RxWs instance
+  ///
+  /// [autoReconnect] enable automatic reconnection
+  /// [maxRetry] max reconnection attempts
+  RxWs({
+    this.autoReconnect = true,
+    this.maxRetry = 10,
+  });
+
+  // ---------------------------------------------------------------------------
+  // Connection
+  // ---------------------------------------------------------------------------
+
+  /// Connect to a WebSocket server
+  /// Supports ws:// and wss://
   Future<void> connect(String urlString, {Map<String, String>? headers}) async {
     try {
       // 1. 利用 Uri 自动解析 URL
@@ -75,7 +129,7 @@ class RxWs {
       _socket = await (_useTLS ? SecureSocket.connect(_host, _port) : Socket.connect(_host, _port)).timeout(const Duration(seconds: 10));
 
       _retry = 0;
-
+      // Prepare handshake key
       final key = base64Encode(List<int>.generate(16, (_) => Random().nextInt(256)));
       _handshakeKey = key;
 
@@ -93,12 +147,16 @@ class RxWs {
           '\r\n';
 
       _socket!.add(utf8.encode(request));
+      //Listen socket
       _socket!.listen(_onData, onDone: _onClose, onError: (_) => _onClose());
     } catch (_) {
       _reconnect();
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Data & Frames
+  // ---------------------------------------------------------------------------
   void _setState(WSState s) {
     _state = s;
     _stateController.add(s);
@@ -115,7 +173,7 @@ class RxWs {
     _parseFrames();
   }
 
-  // 新增：专门处理握手
+  /// Complete WebSocket handshake validation
   void _tryCompleteHandshake() {
     final str = utf8.decode(_buffer, allowMalformed: true);
     final headerEndIndex = str.indexOf("\r\n\r\n");
@@ -124,14 +182,14 @@ class RxWs {
 
     final headerPart = str.substring(0, headerEndIndex + 4);
 
-    // 1. 检查状态码
+    // 1. 检查状态码 Validate status
     if (!headerPart.contains("101 Switching Protocols")) {
       // print("握手失败: 非 101 响应");
       _reconnect();
       return;
     }
 
-    // 2. 检查并验证 Sec-WebSocket-Accept
+    // 2. 检查并验证 Sec-WebSocket-Accept   Validate accept key
     final acceptPattern = RegExp(r'Sec-WebSocket-Accept:\s*([a-zA-Z0-9+/=]+)', caseSensitive: false);
     final match = acceptPattern.firstMatch(headerPart);
     if (match == null) {
@@ -160,7 +218,9 @@ class RxWs {
       _buffer = Uint8List(0);
     }
 
+    // Connected
     _setState(WSState.open);
+    _onOpenController.add(null); // ← 新增
     _startHeartbeat();
 
     // 立即解析可能已经收到的第一帧
@@ -171,6 +231,7 @@ class RxWs {
 
   int _bufferOffset = 0;
 
+  /// Parse incoming WebSocket frames
   void _parseFrames() {
     while (true) {
       if (_bufferOffset + 2 > _buffer.length) return;
@@ -184,7 +245,7 @@ class RxWs {
       final byte2 = _buffer[offset++];
       final masked = (byte2 & 0x80) != 0;
       int payloadLen = byte2 & 0x7F;
-
+      // Extended payload length
       if (payloadLen == 126) {
         if (offset + 2 > _buffer.length) return;
         payloadLen = (_buffer[offset++] << 8) | _buffer[offset++];
@@ -195,7 +256,7 @@ class RxWs {
           payloadLen = (payloadLen << 8) | _buffer[offset++];
         }
       }
-
+      // Masking key
       List<int>? maskKey;
       if (masked) {
         if (offset + 4 > _buffer.length) return;
@@ -227,9 +288,7 @@ class RxWs {
     }
   }
 
-  // =========================
-  // FRAME HANDLE
-  // =========================
+  /// Handle parsed WebSocket frame
   void _handleFrame(bool fin, int opcode, List<int> payload) {
     // fragmentation
     if (opcode == 0x0) {
@@ -250,6 +309,7 @@ class RxWs {
     _emitMessage(opcode, payload);
   }
 
+  /// Emit message to stream
   void _emitMessage(int opcode, List<int> payload) {
     switch (opcode) {
       case 0x1: // text
@@ -266,11 +326,6 @@ class RxWs {
         break;
 
       case 0x8: // close
-        // if (payload.length >= 2) {
-        //  final code = (payload[0] << 8) | payload[1];
-        // final reason = payload.length > 2 ? utf8.decode(payload.sublist(2)) : '';
-        // 可以加个 close 事件
-        // }
         close();
         break;
 
@@ -279,8 +334,8 @@ class RxWs {
         break;
 
       case 0xA: // pong
-        // print("收到");
         _pongTimeout?.cancel();
+        _pongTimeout = null;
         break;
     }
   }
@@ -317,14 +372,14 @@ class RxWs {
     _enqueue(_buildFrame(0x2, data));
   }
 
+  /// Send ping
   void ping() {
+    if (_state != WSState.open) return;
     _enqueue(_buildFrame(0x9, []));
     _startPongTimeout();
   }
 
-  // =========================
-  // FRAME BUILD
-  // =========================
+  /// Build WebSocket frame
   List<int> _buildFrame(int opcode, List<int> payload) {
     final frame = <int>[];
 
@@ -361,8 +416,10 @@ class RxWs {
   // =========================
   void _startHeartbeat() {
     _heartbeat?.cancel();
-    _heartbeat = Timer.periodic(Duration(seconds: 10), (_) {
-      ping();
+    _heartbeat = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (_state == WSState.open) {
+        ping();
+      }
     });
   }
 
@@ -377,33 +434,40 @@ class RxWs {
   // RECONNECT
   // =========================
   void _reconnect() {
-    if (_state == WSState.closing) return;
+    try {
+      if (!autoReconnect || _state == WSState.closing) return;
 
-    // 彻底清理旧资源
-    _cleanup();
+      // 彻底清理旧资源
+      _cleanup();
 
-    _setState(WSState.closed);
+      _setState(WSState.closed);
 
-    if (_retry >= _maxRetry) {
-      // print("达到最大重连次数，停止重连");
-      return;
+      if (_retry >= maxRetry) {
+        // print("达到最大重连次数，停止重连");
+        return;
+      }
+
+      final delay = pow(2, _retry).toInt();
+      _retry++;
+
+      // print("将在 $delay 秒后重连...");
+      // 在 _reconnect() 的 Future.delayed 内部：
+      Future.delayed(Duration(seconds: delay), () {
+        // 重新组装原始的 URL 传进去即可
+        final scheme = _useTLS ? "wss" : "ws";
+        connect("$scheme://$_host:$_port$_path", headers: headers);
+      });
+    } catch (e) {
+      _onErrorController.add(e); // ← 新增
+      _reconnect();
     }
-
-    final delay = pow(2, _retry).toInt();
-    _retry++;
-
-    // print("将在 $delay 秒后重连...");
-    // 在 _reconnect() 的 Future.delayed 内部：
-    Future.delayed(Duration(seconds: delay), () {
-      // 重新组装原始的 URL 传进去即可
-      final scheme = _useTLS ? "wss" : "ws";
-      connect("$scheme://$_host:$_port$_path", headers: headers);
-    });
   }
 
   void _cleanup() {
     _heartbeat?.cancel();
     _pongTimeout?.cancel();
+    _heartbeat = null;
+    _pongTimeout = null;
     _socket?.destroy();
     _socket = null;
     _buffer = Uint8List(0);
@@ -421,11 +485,15 @@ class RxWs {
     _enqueue(_buildFrame(0x8, []));
     _socket?.close();
     _setState(WSState.closed);
+    _onCloseController.add(null);
+    _cleanup();
   }
 
+  /// Clean up all resources
   void _onClose() {
     _heartbeat?.cancel();
     _pongTimeout?.cancel();
+    _onCloseController.add(null);
     _reconnect();
   }
 }

@@ -1,6 +1,23 @@
 # Changelog
+## [1.1.0] - 2026-05-22
 
-## [Unreleased]
+### Added
+- Added full Web platform support using `package:web`
+- Cross-platform WebSocket client architecture (IO + Web)
+- Unified abstract interface `WsClient` for all platforms
+
+### Improved
+- Optimized project structure for multi-platform publishing
+- Enhanced connection state management across all platforms
+- Updated documentation with web support notes
+
+## [1.0.1] - 2026-05-20
+
+### Fixed
+- Fixed demo code and example usage
+- Minor documentation improvements
+
+## [1.0.0] - 2026-05-20
 
 ### Added
 - Full support for TLS connections via `SecureSocket`
@@ -9,6 +26,7 @@
 - Automatic Ping/Pong heartbeat (every 10 seconds)
 - Pong timeout detection with automatic reconnection
 - Exponential backoff reconnect strategy (up to 10 retries)
+- Cross-platform support (IO + Web)
 
 ### Improved
 - Strict `Sec-WebSocket-Accept` validation during handshake
@@ -24,12 +42,4 @@
 
 ### Changed
 - Introduced `_cleanup()` method for consistent resource management
-- Enhanced logging for better debugging
-
----
-
-## [1.0.1] - 2026-05-20
-* fixed demo
-
-## [1.0.0] - 2026-05-20
-* Initial release of `RxWs`
+- Enhanced internal state management

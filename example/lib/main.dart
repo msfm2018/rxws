@@ -23,12 +23,14 @@ class WSPage extends StatefulWidget {
 }
 
 class _WSPageState extends State<WSPage> {
-  final ws = RxWs();
+  final ws = createWsClient();
 
   final List<String> messages = [];
 
   StreamSubscription? _msgSub;
-  StreamSubscription? _stateSub;
+  StreamSubscription? _openSub;
+  StreamSubscription? _closeSub;
+  StreamSubscription? _errorSub;
 
   String status = "connecting...";
 
@@ -46,25 +48,63 @@ class _WSPageState extends State<WSPage> {
   // CONNECT
   // =========================
   Future<void> _initWS() async {
-    // 1. 连接本地测试服务 (ws)
-    await ws.connect("ws://127.0.0.1:8080/ws");
-    // 2. 连接线上生产环境 (wss)
-    // await ws.connect("wss://example.com/live");
-    // 消息流
-    _msgSub = ws.messages.listen((message) {
+    // await ws.connect("ws://127.0.0.1:8080/ws");
+    await ws.connect("wss://echo.websocket.org");
+    // await ws.connect("ws://127.0.0.1:1234");
+
+    ws.onState.listen((state) {
+      switch (state) {
+        case WSState.connecting:
+          print("连接中...");
+          break;
+
+        case WSState.open:
+          print("已连接");
+          break;
+
+        case WSState.closed:
+          print("已断开");
+          break;
+
+        case WSState.closing:
+          print("关闭中");
+          break;
+      }
+    });
+    // ✅ 消息
+    _msgSub = ws.onMessage.listen((message) {
       if (!mounted) return;
-      print(message.toString());
+      // print(message.toString());
       setState(() {
         messages.add(message.toString());
       });
     });
 
-    // 状态流
-    _stateSub = ws.states.listen((s) {
+    // ✅ 打开
+    _openSub = ws.onOpen.listen((_) {
       if (!mounted) return;
 
       setState(() {
-        status = s.toString();
+        status = "open";
+      });
+    });
+
+    // ✅ 关闭
+    _closeSub = ws.onClose.listen((_) {
+      if (!mounted) return;
+
+      setState(() {
+        status = "closed";
+      });
+    });
+
+    // ✅ 错误
+    _errorSub = ws.onError.listen((e) {
+      if (!mounted) return;
+
+      setState(() {
+        status = "error";
+        messages.add("❌ error: $e");
       });
     });
   }
@@ -81,7 +121,7 @@ class _WSPageState extends State<WSPage> {
     _isSending = true;
 
     try {
-      ws.sendText(text);
+      ws.send(text); // ✅ 改这里
 
       setState(() {
         messages.add("me: $text");
@@ -94,12 +134,12 @@ class _WSPageState extends State<WSPage> {
   }
 
   // =========================
-  // RECONNECT MANUAL
+  // RECONNECT
   // =========================
   Future<void> reconnect() async {
     ws.close();
     await Future.delayed(const Duration(seconds: 1));
-    await ws.connect("ws://127.0.0.1:8080/ws");
+    await _initWS();
   }
 
   // =========================
@@ -108,7 +148,9 @@ class _WSPageState extends State<WSPage> {
   @override
   void dispose() {
     _msgSub?.cancel();
-    _stateSub?.cancel();
+    _openSub?.cancel();
+    _closeSub?.cancel();
+    _errorSub?.cancel();
     ws.close();
     _inputCtrl.dispose();
     super.dispose();
@@ -121,14 +163,12 @@ class _WSPageState extends State<WSPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Raw WebSocket (Protocol Level)"),
+        title: const Text("Cross Platform WebSocket"),
         actions: [IconButton(onPressed: reconnect, icon: const Icon(Icons.refresh))],
       ),
       body: Column(
         children: [
-          // =====================
-          // STATUS BAR
-          // =====================
+          // 状态
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(8),
@@ -136,9 +176,7 @@ class _WSPageState extends State<WSPage> {
             child: Text("状态: $status", style: const TextStyle(color: Colors.white)),
           ),
 
-          // =====================
-          // MESSAGE LIST
-          // =====================
+          // 消息列表
           Expanded(
             child: ListView.builder(
               itemCount: messages.length,
@@ -148,9 +186,7 @@ class _WSPageState extends State<WSPage> {
             ),
           ),
 
-          // =====================
-          // INPUT AREA
-          // =====================
+          // 输入框
           Padding(
             padding: const EdgeInsets.all(8),
             child: Row(
@@ -172,13 +208,11 @@ class _WSPageState extends State<WSPage> {
     );
   }
 
-  // =========================
-  // STATUS COLOR
-  // =========================
   Color _getStatusColor(String status) {
-    if (status.contains("open")) return Colors.green;
-    if (status.contains("connecting")) return Colors.orange;
-    if (status.contains("closed")) return Colors.red;
+    if (status == "open") return Colors.green;
+    if (status == "connecting") return Colors.orange;
+    if (status == "closed") return Colors.red;
+    if (status == "error") return Colors.redAccent;
     return Colors.grey;
   }
 }
