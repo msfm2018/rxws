@@ -18,7 +18,7 @@ Add to your `pubspec.yaml`:
 dependencies:
   rxws: ^1.1.0
 
-```
+
 import 'package:rxws/rxws.dart';
 
 void connect() async {
@@ -50,4 +50,6 @@ void connect() async {
   await client.connect('wss://echo.websocket.org');
 }
 ```
+#### 应用截图
+![image](https://github.com/msfm2018/rxws/blob/1.1.0/index.png)
 
