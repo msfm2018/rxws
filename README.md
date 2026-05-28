@@ -16,7 +16,7 @@ Add to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  rxws: ^1.1.0
+  rxws: ^1.1.1
 
 
 import 'package:rxws/rxws.dart';

@@ -1,4 +1,8 @@
 # Changelog
+## [1.1.1] - 2026-05-28
+### Updated
+* Upgraded `flutter_lints` to ^6.0.0 for improved code analysis.
+
 ## [1.1.0] - 2026-05-22
 
 ### Added
