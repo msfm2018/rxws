@@ -23,7 +23,7 @@ Add `rxws` to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  rxws: ^1.1.1
+  rxws: ^1.1.2
 ```
 
 Then run:
